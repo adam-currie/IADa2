@@ -113,6 +113,7 @@
     <ClCompile Include="CmdLineApp.cpp" />
     <ClCompile Include="FileSenderReceiver.cpp" />
     <ClCompile Include="FileWrapper.cpp" />
+    <ClCompile Include="Net.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileSenderReceiver.h" />

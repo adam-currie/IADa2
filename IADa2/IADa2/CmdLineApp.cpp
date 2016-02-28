@@ -1,11 +1,8 @@
 #include <iostream>
-#include <fstream>
 #include <string>
-#include <vector>
-#include "Net.h"
+#include "FileSenderReceiver.h"
 
 using namespace std;
-using namespace net;
 
 int main() {
 
@@ -19,7 +16,9 @@ int main() {
 		}
 
 		if (input == "s") {
-			//todo: send
+			FileSenderReceiver FileSender();
+			
+
 		}
 
 		if (input == "r") {
