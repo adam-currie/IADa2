@@ -9,6 +9,8 @@ class FileSenderReceiver{
 public:
 	FileSenderReceiver();
 
+	typedef std::function<void(float)> SendProgressCallback;
+	typedef std::function<void(float)> RecvProgressCallback;
 	//todo add callbacks/listeners
 
 	void SendFile(std::string filePath, net::Address ip, int port);
