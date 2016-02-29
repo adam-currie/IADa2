@@ -4,6 +4,7 @@
 	Author: Glenn Fiedler <gaffer@gaffer.org>
 */
 #pragma once
+#pragma warning(disable : 4996)//debug
 
 #ifndef NET_H
 #define NET_H
@@ -149,7 +150,7 @@ namespace net
 	{
 		#if PLATFORM == PLATFORM_WINDOWS
 	    WSADATA WsaData;
-		return WSAStartup( MAKEWORD(2,2), &WsaData ) != NO_ERROR;
+		return (WSAStartup( MAKEWORD(2,2), &WsaData ) == NO_ERROR);
 		#else
 		return true;
 		#endif
@@ -265,7 +266,8 @@ namespace net
 			address.sin_family = AF_INET;
 			address.sin_addr.s_addr = htonl( destination.GetAddress() );
 			address.sin_port = htons( (unsigned short) destination.GetPort() );
-
+			char test[2000];//debug
+			memcpy_s(test, 2000, data, size);//debug
 			int sent_bytes = sendto( socket, (const char*)data, size, 0, (sockaddr*)&address, sizeof(sockaddr_in) );
 
 			return sent_bytes == size;
@@ -316,6 +318,10 @@ namespace net
 			Client,
 			Server
 		};
+
+		Address GetAddress() {
+			return address;
+		}
 		
 		Connection( unsigned int protocolId, float timeout )
 		{
@@ -359,6 +365,12 @@ namespace net
 		bool IsRunning() const
 		{
 			return running;
+		}
+
+		void ListenFor(Address sender) {
+			Listen();
+			requiredSender = sender;
+			requiringSender = true;
 		}
 		
 		void Listen()
@@ -468,13 +480,23 @@ namespace net
 				 packet[2] != (unsigned char) ( ( protocolId >> 8 ) & 0xFF ) ||
 				 packet[3] != (unsigned char) ( protocolId & 0xFF ) )
 				return 0;
-			if ( mode == Server && !IsConnected() )
+			if ( mode == Server && !IsConnected())
 			{
-				printf( "server accepts connection from client %d.%d.%d.%d:%d\n", 
-					sender.GetA(), sender.GetB(), sender.GetC(), sender.GetD(), sender.GetPort() );
-				state = Connected;
-				address = sender;
-				OnConnect();
+				if (requiringSender) {
+					if (sender.GetAddress() == requiredSender.GetAddress()) {
+						printf("server accepts connection from client %d.%d.%d.%d:%d\n",
+							sender.GetA(), sender.GetB(), sender.GetC(), sender.GetD(), sender.GetPort());
+						state = Connected;
+						address = sender;
+						OnConnect();
+					}
+				}else{
+					printf("server accepts connection from client %d.%d.%d.%d:%d\n",
+						sender.GetA(), sender.GetB(), sender.GetC(), sender.GetD(), sender.GetPort());
+					state = Connected;
+					address = sender;
+					OnConnect();
+				}
 			}
 			if ( sender == address )
 			{
@@ -513,6 +535,7 @@ namespace net
 			state = Disconnected;
 			timeoutAccumulator = 0.0f;
 			address = Address();
+			requiringSender = false;
 		}
 	
 		enum State
@@ -533,6 +556,8 @@ namespace net
 		Socket socket;
 		float timeoutAccumulator;
 		Address address;
+		Address requiredSender;
+		bool requiringSender = false;
 	};
 	
 	// packet queue to store information about sent and received packets sorted in sequence order
