@@ -25,3 +25,4 @@ unsigned int overflowDiff(unsigned int a, unsigned int b, unsigned int max = UIN
 class CannotOpenFileException : public std::exception {};
 class FailedToOpenSocketException : public std::exception {};
 class ConnectFailedException : public std::exception {};
+class LostConnectionException : public std::exception {};

@@ -76,6 +76,10 @@ int main() {
 					cout << "cannot connect to server at specified address\n";
 					break;
 				}
+				catch (LostConnectionException) {
+					cout << "connection to server was lost\n";
+					break;
+				}
 			}
 
 			cout << "\n";
@@ -130,6 +134,10 @@ int main() {
 				}
 				catch (FailedToOpenSocketException) {
 					cout << "cannot establish connection on specified port\n";
+					break;
+				}
+				catch (LostConnectionException) {
+					cout << "lost connection to sender\n";
 					break;
 				}
 

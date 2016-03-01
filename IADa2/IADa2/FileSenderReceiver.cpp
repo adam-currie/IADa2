@@ -11,7 +11,7 @@ FileSenderReceiver::FileSenderReceiver() :
 	sendInterval = .1f;
 }
 
-//todo: document exceptions, CannotOpenFileException, ConnectFailedException
+//todo: document exceptions, CannotOpenFileException, ConnectFailedException, LostConnectionException
 void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigned short port){	
 	//open file
 	FileWrapper file(filePath, CHUNK_SIZE);
@@ -41,10 +41,12 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 	enum State {
 		requestingToSend,
 		sendingFile,
-		done
+		transmissionComplete,
+		finished
 	};
+	unsigned int transmissionCompleteSequence = 0;
 	State state = requestingToSend;
-	while (state != done) {
+	while (state != finished) {
 		if (connection.ConnectFailed()) {
 			throw ConnectFailedException();
 		}
@@ -54,10 +56,8 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 		}
 
 		//lost connection
-		if (connected && connection.IsConnected()) {
-			connected = false;
-			state = done;
-			break;
+		if (connected && !connection.IsConnected()) {
+			throw LostConnectionException();
 		}
 
 		//send
@@ -86,7 +86,7 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 				unsigned int localSequence = connection.GetReliabilitySystem().GetLocalSequence();
 				//if un acked chunk is too old to be acked
 				if (overflowDiff(unAckedChunks[i].first, localSequence) > 33) {
-					unsigned int chunkIndex = unAckedChunks[i].second;
+					_int64 oldChunkIndex = unAckedChunks[i].second;
 
 					//remove old
 					unAckedChunks.erase(unAckedChunks.begin() + i);
@@ -94,15 +94,15 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 					//add new
 					unAckedChunks.push_back(pair<unsigned int, _int64>(
 						connection.GetReliabilitySystem().GetLocalSequence(),
-						chunkIndex
+						oldChunkIndex
 					));
 
 					//resend
 					char cmd[] = "CHUNK";
 					unsigned char packet[CHUNK_SIZE + sizeof(_int64) + sizeof("CHUNK")];
 					memcpy(packet, cmd, sizeof(cmd));
-					memcpy(packet + sizeof(cmd), &chunkIndex, sizeof(_int64));
-					file.GetChunk((char*)packet + sizeof(_int64) + sizeof("CHUNK"), chunkIndex);
+					memcpy(packet + sizeof(cmd), &oldChunkIndex, sizeof(_int64));
+					file.GetChunk((char*)packet + sizeof(_int64) + sizeof("CHUNK"), oldChunkIndex);
 					connection.SendPacket(packet, sizeof(packet));
 
 					chunkSent = true;
@@ -131,12 +131,25 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 					chunkIndex++;
 				} else {
 					if (unAckedChunks.size() == 0) {
-						state = done;
+						state = transmissionComplete;
+						transmissionCompleteSequence = connection.GetReliabilitySystem().GetLocalSequence();
+						char cmd[] = "TRANSMISSION_COMPLETE";
+						connection.SendPacket((unsigned char*)cmd, sizeof(cmd));
 					}else {
 						//send empty packet to maintain connection
 						connection.SendPacket(NULL, 0);
 					}
 				}
+			}
+			break;
+		}
+		case transmissionComplete: {
+			//if cmd not acked for too long
+			if (overflowDiff(transmissionCompleteSequence, connection.GetReliabilitySystem().GetLocalSequence()) > 33) {
+				//resend
+				transmissionCompleteSequence = connection.GetReliabilitySystem().GetLocalSequence();
+				char cmd[] = "TRANSMISSION_COMPLETE";
+				connection.SendPacket((unsigned char*)cmd, sizeof(cmd));
 			}
 			break;
 		}
@@ -155,6 +168,7 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 					//if sequence numbers match
 					if (acked[i] == unAckedChunks[j].first) {
 						unAckedChunks.erase(unAckedChunks.begin() + j);
+						break;
 					}
 				}
 			}
@@ -164,6 +178,16 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 				//check if packet starts with request accept send command
 				if (strcmp((const char*)packet, "ACCEPT_SEND") == 0) {
 					state = sendingFile;
+				}
+				break;
+			}
+			case transmissionComplete: {
+				//check if transmission complete message is acked
+				for (int i = 0; i < ackCount; i++) {
+					if (acked[i] == transmissionCompleteSequence) {
+						state = finished;
+						break;
+					}
 				}
 				break;
 			}
@@ -182,7 +206,7 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 void FileSenderReceiver::RecvFile(unsigned short port, string savePath, Address sender){
 
 	//open file
-	FileWrapper file(savePath, CHUNK_SIZE, fstream::in | fstream::out | fstream::trunc);
+	FileWrapper file(savePath, CHUNK_SIZE, fstream::in | fstream::out | fstream::trunc | fstream::binary);
 	if (!file.Exists()) {
 		throw CannotOpenFileException();
 	}
@@ -194,14 +218,26 @@ void FileSenderReceiver::RecvFile(unsigned short port, string savePath, Address 
 
 	connection.ListenFor(sender);
 
+	_int64 fileSize = 0;
 	enum State {
 		awaitingSendRequest,
-		receivingFile
+		receivingFile,
+		finished
 	};
 	State state = awaitingSendRequest;
-	bool done = false;
+	bool connected = false;
 	bool senderAcked = false;//true when sender acks that the transfer was accepted
-	while (!done) {
+	while (state != finished) {
+		if (!connected && connection.IsConnected()) {
+			connected = true;
+		}
+
+		//lost connection
+		if (connected && !connection.IsConnected()) {
+			throw LostConnectionException();
+		}
+
+
 		//send
 		if (state == receivingFile && !senderAcked) {
 			char cmd[] = "ACCEPT_SEND";
@@ -212,34 +248,42 @@ void FileSenderReceiver::RecvFile(unsigned short port, string savePath, Address 
 		}
 		
 		//recv
-		switch (state){
-		case awaitingSendRequest: {
-			unsigned char packet[CHUNK_SIZE + sizeof(_int64) + sizeof("CHUNK")];//size of the largest pack(chunk packet)
-			while (connection.ReceivePacket(packet, sizeof(packet)) > 0) {
+		unsigned char packet[CHUNK_SIZE + sizeof(_int64) + sizeof("CHUNK")];//size of the largest pack(chunk packet)
+		while (connection.ReceivePacket(packet, sizeof(packet)) > 0) {
+			switch (state) {
+			case awaitingSendRequest: {
 				//check if packet starts with request send command
 				if (strcmp((const char*)packet, "REQUEST_SEND") == 0) {
-					_int64 fileSize;
-					memcmp(&fileSize, packet+sizeof("REQUEST_SEND"), sizeof(_int64));
-					char* fileName = (char*)packet+sizeof("REQUEST_SEND") + sizeof(_int64);
+					fileSize = *(int64_t*)(packet + sizeof("REQUEST_SEND"));
+					char* fileName = (char*)packet + sizeof("REQUEST_SEND") + sizeof(_int64);
 					state = receivingFile;
 					break;
 				}
+				break;
 			}
-			break;
-		}
-		case receivingFile: {
-			unsigned char packet[CHUNK_SIZE + sizeof(_int64) + sizeof("CHUNK")];//size of the largest pack(chunk packet)
-			while (connection.ReceivePacket(packet, sizeof(packet)) > 0) {
+			case receivingFile: {
 				if (strcmp((const char*)packet, "CHUNK") == 0) {
 					if (!senderAcked) {
 						senderAcked = true;
 					}
 
-					//todo: save chunk
+					_int64 chunkIndex = *(int64_t*)(packet + sizeof("CHUNK"));
+
+					_int64 maxChunk = (fileSize - 1) / CHUNK_SIZE;
+					//if last chunk
+					if (chunkIndex == maxChunk) {
+						file.WriteChunk((char*)packet + sizeof("chunk") + sizeof(chunkIndex), chunkIndex, fileSize%CHUNK_SIZE);//only write remaining size
+					}else {
+						file.WriteChunk((char*)packet + sizeof("chunk") + sizeof(chunkIndex), chunkIndex);
+					}
+					
 				}
+				else if (strcmp((const char*)packet, "TRANSMISSION_COMPLETE") == 0) {
+					state = finished;
+				}
+				break;
 			}
-			break;
-		}
+			}
 		}
 
 		//update

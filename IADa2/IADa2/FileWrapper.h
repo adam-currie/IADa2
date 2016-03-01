@@ -7,10 +7,11 @@
 class FileWrapper {
 public:
 
-	FileWrapper(std::string filePath, int chunkSize, std::ios::openmode mode = std::ios::in | std::ios::out);
+	FileWrapper(std::string filePath, int chunkSize, std::ios::openmode mode = std::ios::in | std::ios::out | std::ios::binary);
 	
 
 	void GetChunk(char* chunk, _int64 index);
+	void WriteChunk(char* chunk, _int64 index, int maxToWrite);
 	void WriteChunk(char* chunk, _int64 index);
 	std::streampos GetFileSize();
 	bool Exists();
