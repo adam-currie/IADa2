@@ -9,13 +9,9 @@ class FileSenderReceiver{
 public:
 	FileSenderReceiver();
 
-	typedef std::function<void(_int64 sent, _int64 total)> FileProgressCallback;
-	FileProgressCallback DefaultProgrossCallback;
-
-	FileProgressCallback ProgressCallback = DefaultProgrossCallback;
-
-	void SendFile(std::string filePath, net::Address ip, unsigned short port);
+	_int64 SendFile(std::string filePath, net::Address ip, unsigned short port);
 	void RecvFile(unsigned short port, std::string savePath, net::Address sender);
+
 private:
 	net::ReliableConnection connection;
 	float sendInterval;//todo: dynamicaly change

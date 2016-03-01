@@ -8,9 +8,13 @@ using namespace std;
 using namespace net;
 
 bool parseAddress(unsigned char* addrByteArr, string str, char delim);
-void fileProgressHandler(_int64 sent, _int64 total);
+
+LARGE_INTEGER freq;
+LARGE_INTEGER startTime;
 
 int main() {
+	QueryPerformanceFrequency(&freq);
+
 	if (!InitializeSockets()) {
 		printf("ERROR: failed to initialize sockets\n");
 		return 1;
@@ -63,8 +67,17 @@ int main() {
 				cin >> input;
 				try {
 					FileSenderReceiver sender;
-					sender.ProgressCallback = ;
-					sender.SendFile(input, address, port);
+					QueryPerformanceCounter(&startTime);
+
+					string filePath = input;
+					_int64 size = sender.SendFile(filePath, address, port);
+
+					//print results
+					LARGE_INTEGER current;
+					QueryPerformanceCounter(&current);
+					double elapsed = (double)(current.QuadPart - startTime.QuadPart) / (double)freq.QuadPart;
+					cout << "time to send: " << elapsed << "\n";
+					cout << "speed(KB/s): " << ((float)size / elapsed) / (float)1000 << "\n";
 					break;
 				}
 				catch (CannotOpenFileException) {
@@ -153,10 +166,6 @@ int main() {
 
 	ShutdownSockets();
 	return 0;
-}
-
-void fileProgressHandler(_int64 sent, _int64 total) {
-
 }
 
 bool parseAddress(unsigned char* addrByteArr, string str, char delim) {

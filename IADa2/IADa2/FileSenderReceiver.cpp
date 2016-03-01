@@ -8,11 +8,11 @@ using namespace net;
 
 FileSenderReceiver::FileSenderReceiver() : 
 	connection(PROTOCOL_ID, TIME_OUT, UINT_MAX){
-	sendInterval = .002f;
+	sendInterval = .01f;
 }
 
 //todo: document exceptions, CannotOpenFileException, ConnectFailedException, LostConnectionException
-void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigned short port){	
+_int64 FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigned short port){	
 	//open file
 	FileWrapper file(filePath, CHUNK_SIZE);
 	if (!file.Exists()) {
@@ -35,7 +35,7 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 
 	//pair with sequenceNumber and chunk index of un-acked chunks
 	vector<pair<unsigned int,_int64>> unAckedChunks;
-
+	//todo: CALL PROGRESSCALLBACK WHEN FILE DONE
 	bool connected = false;
 	_int64 chunkIndex = 0;
 	enum State {
@@ -44,8 +44,10 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 		transmissionComplete,
 		finished
 	};
-	unsigned int transmissionCompleteSequence = 0;
 	State state = requestingToSend;
+
+	_int64 ackedChunkCount = 0;
+	unsigned int transmissionCompleteSequence = 0;
 	while (state != finished) {
 		if (connection.ConnectFailed()) {
 			throw ConnectFailedException();
@@ -134,6 +136,7 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 					chunkIndex++;
 				} else {
 					if (unAckedChunks.size() == 0) {
+						//start waiting for server to ack transmission complete message
 						state = transmissionComplete;
 						transmissionCompleteSequence = connection.GetReliabilitySystem().GetLocalSequence();
 						char cmd[] = "TRANSMISSION_COMPLETE";
@@ -174,6 +177,7 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 					//if sequence numbers match
 					if (acked[i] == unAckedChunks[j].first) {
 						unAckedChunks.erase(unAckedChunks.begin() + j);
+						ackedChunkCount++;
 						doneLoop = true;
 						break;
 					}
@@ -209,7 +213,9 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 		net::wait(sendInterval);//todo: account for time taken to execute iteration of loop
 	}
 
+	cout << "transmission complete\n";
 	connection.Stop();
+	return file.GetFileSize();
 }
 
 //receivingFileCallback must be set first, todo: document exceptions
@@ -306,6 +312,7 @@ void FileSenderReceiver::RecvFile(unsigned short port, string savePath, Address 
 		net::wait(sendInterval);//todo: account for time taken to execute iteration of loop
 	}
 
+	cout << "transmission complete\n";
 	connection.Stop();
 }
 

@@ -16,6 +16,7 @@ public:
 	std::streampos GetFileSize();
 	bool Exists();
 	_int64 GetMaxChunk();
+	unsigned _int32 GetCrc32();
 
 private:
 

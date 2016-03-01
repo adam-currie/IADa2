@@ -43,3 +43,25 @@ bool FileWrapper::Exists(){
 _int64 FileWrapper::GetMaxChunk(){
 	return ((_int64)GetFileSize() - 1)/chunkSize;//todo: check
 }
+
+//todo: delete the following
+//http://www.hackersdelight.org/hdcodetxt/crc.c.txt
+unsigned _int32 FileWrapper::GetCrc32(){
+	file.clear();
+	file.seekg(0);
+
+	char byte = 0;
+	_int32 crc, mask;
+
+	crc = 0xFFFFFFFF;
+	while (!file.bad()) {
+		file.read(&byte, 1);//get byte
+
+		crc = crc ^ (unsigned int)byte;
+		for (int j = 7; j >= 0; j--) {    // Do eight times.
+			mask = -(crc & 1);
+			crc = (crc >> 1) ^ (0xEDB88320 & mask);
+		}
+	}
+	return ~crc;
+}
