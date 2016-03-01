@@ -8,7 +8,7 @@ using namespace net;
 
 FileSenderReceiver::FileSenderReceiver() : 
 	connection(PROTOCOL_ID, TIME_OUT, UINT_MAX){
-	sendInterval = .1f;
+	sendInterval = .002f;
 }
 
 //todo: document exceptions, CannotOpenFileException, ConnectFailedException, LostConnectionException
@@ -108,6 +108,9 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 					chunkSent = true;
 					break;
 				}
+				if (chunkSent) {
+					break;
+				}
 			}
 
 			//send new chunk
@@ -124,7 +127,7 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 					unAckedChunks.push_back(pair<unsigned int, _int64>(
 						connection.GetReliabilitySystem().GetLocalSequence(),
 						chunkIndex
-						));
+					));
 
 					//send
 					connection.SendPacket(packet, sizeof(packet));
@@ -137,7 +140,9 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 						connection.SendPacket((unsigned char*)cmd, sizeof(cmd));
 					}else {
 						//send empty packet to maintain connection
-						connection.SendPacket(NULL, 0);
+						//connection.SendPacket(NULL, 0);//debug
+						char emptyPacket[] = "empty";
+						connection.SendPacket((unsigned char*)emptyPacket, sizeof(emptyPacket));
 					}
 				}
 			}
@@ -160,16 +165,21 @@ void FileSenderReceiver::SendFile(std::string filePath, net::Address ip, unsigne
 		while (connection.ReceivePacket(packet, sizeof(packet)) > 0) {
 
 			//remove acked chunks from unAckedChunks
-			unsigned int * acked = NULL;
+			unsigned int acked[33];
 			int ackCount = 0;
-			connection.GetReliabilitySystem().GetAcks(&acked, ackCount);
+			connection.GetReliabilitySystem().GetAcks(acked, ackCount);
+			bool doneLoop = false;
 			for (int i = 0; i < ackCount; i++) {
 				for (vector<int>::size_type j = 0; j < unAckedChunks.size(); j++) {
 					//if sequence numbers match
 					if (acked[i] == unAckedChunks[j].first) {
 						unAckedChunks.erase(unAckedChunks.begin() + j);
+						doneLoop = true;
 						break;
 					}
+				}
+				if (doneLoop) {
+					break;
 				}
 			}
 
@@ -244,7 +254,9 @@ void FileSenderReceiver::RecvFile(unsigned short port, string savePath, Address 
 			connection.SendPacket((unsigned char*)cmd, sizeof(cmd));
 		}else {
 			//send empty packet to maintain connection
-			connection.SendPacket(NULL, 0);
+			//connection.SendPacket(NULL, 0);//debug
+			char emptyPacket[] = "empty";
+			connection.SendPacket((unsigned char*)emptyPacket, sizeof(emptyPacket));
 		}
 		
 		//recv
@@ -279,6 +291,9 @@ void FileSenderReceiver::RecvFile(unsigned short port, string savePath, Address 
 					
 				}
 				else if (strcmp((const char*)packet, "TRANSMISSION_COMPLETE") == 0) {
+					//send empty packet so sender can see the ack
+					char emptyPacket[] = "empty";
+					connection.SendPacket((unsigned char*)emptyPacket, sizeof(emptyPacket));
 					state = finished;
 				}
 				break;

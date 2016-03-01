@@ -8,6 +8,7 @@ using namespace std;
 using namespace net;
 
 bool parseAddress(unsigned char* addrByteArr, string str, char delim);
+void fileProgressHandler(_int64 sent, _int64 total);
 
 int main() {
 	if (!InitializeSockets()) {
@@ -62,6 +63,7 @@ int main() {
 				cin >> input;
 				try {
 					FileSenderReceiver sender;
+					sender.ProgressCallback = ;
 					sender.SendFile(input, address, port);
 					break;
 				}
@@ -151,6 +153,10 @@ int main() {
 
 	ShutdownSockets();
 	return 0;
+}
+
+void fileProgressHandler(_int64 sent, _int64 total) {
+
 }
 
 bool parseAddress(unsigned char* addrByteArr, string str, char delim) {

@@ -825,9 +825,11 @@ namespace net
 			return max_sequence;
 		}
 				
- 		void GetAcks( unsigned int ** acks, int & count )
+ 		void GetAcks(unsigned int acks[33], int & count )
 		{
-			*acks = &this->acks[0];
+			for (std::vector<int>::size_type i = 0; i < this->acks.size(); i++) {
+				acks[i] = this->acks[i];
+			}
 			count = (int) this->acks.size();
 		}
 		
